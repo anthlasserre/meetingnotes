@@ -7,7 +7,7 @@ set -e  # Exit on any error
 
 # Configuration
 APP_NAME="Meetingnotes"
-BUNDLE_ID="owen.meetingnotes"
+BUNDLE_ID="anthlasserre.meetingnotes"
 VERSION=$(grep -m1 "MARKETING_VERSION" Meetingnotes.xcodeproj/project.pbxproj | sed 's/.*= \(.*\);/\1/')
 
 # Source environment variables if .env file exists
