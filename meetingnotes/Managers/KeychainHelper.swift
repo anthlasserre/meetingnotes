@@ -12,17 +12,60 @@ class KeychainHelper {
     
     private init() {}
     
-    /// Gets the API key directly from keychain
+    /// Gets the API key directly from keychain (legacy OpenAI key)
     /// - Returns: The API key string if found, nil otherwise
     func getAPIKey() -> String? {
         return get(forKey: "openAIKey")
     }
-    
-    /// Saves the API key to keychain
+
+    /// Saves the API key to keychain (legacy OpenAI key)
     /// - Parameter apiKey: The API key to save
     /// - Returns: True if the save was successful, false otherwise
     func saveAPIKey(_ apiKey: String) -> Bool {
         return save(apiKey, forKey: "openAIKey")
+    }
+
+    // MARK: - Multi-Provider API Key Management
+
+    /// Gets the API key for a specific provider
+    /// - Parameter provider: The AI provider type
+    /// - Returns: The API key string if found, nil otherwise
+    func getAPIKey(for provider: AIProviderType) -> String? {
+        let key = keychainKey(for: provider)
+        return get(forKey: key)
+    }
+
+    /// Saves the API key for a specific provider
+    /// - Parameters:
+    ///   - apiKey: The API key to save
+    ///   - provider: The AI provider type
+    /// - Returns: True if the save was successful, false otherwise
+    func saveAPIKey(_ apiKey: String, for provider: AIProviderType) -> Bool {
+        let key = keychainKey(for: provider)
+        return save(apiKey, forKey: key)
+    }
+
+    /// Deletes the API key for a specific provider
+    /// - Parameter provider: The AI provider type
+    /// - Returns: True if the deletion was successful, false otherwise
+    func deleteAPIKey(for provider: AIProviderType) -> Bool {
+        let key = keychainKey(for: provider)
+        return delete(forKey: key)
+    }
+
+    /// Gets all providers that have API keys configured
+    /// - Returns: Array of provider types with stored keys
+    func getAllConfiguredProviders() -> [AIProviderType] {
+        return AIProviderType.allCases.filter { provider in
+            getAPIKey(for: provider) != nil
+        }
+    }
+
+    /// Generates the keychain key for a provider
+    /// - Parameter provider: The AI provider type
+    /// - Returns: The keychain key string
+    private func keychainKey(for provider: AIProviderType) -> String {
+        return "provider.\(provider.rawValue.lowercased()).apiKey"
     }
     
     /// Saves a string value to the keychain

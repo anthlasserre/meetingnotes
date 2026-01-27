@@ -7,25 +7,26 @@ import SwiftUI
 import OSLog
 import Combine
 
-/// Manages audio capture from microphone and system audio and handles real-time transcription via OpenAI
+/// Manages audio capture from microphone and system audio and handles real-time transcription
 @MainActor
 class AudioManager: NSObject, ObservableObject {
     static let shared = AudioManager()
-    
+
     @Published var transcriptChunks: [TranscriptChunk] = []
     @Published var isRecording = false
     @Published var errorMessage: String?
     @Published var micAudioLevel: Float = 0.0
     @Published var systemAudioLevel: Float = 0.0
-    
+
     private var audioEngine = AVAudioEngine()
-    private var micSocketTask: URLSessionWebSocketTask?
-    private var systemSocketTask: URLSessionWebSocketTask?
-    private let realtimeURL = URL(string: "wss://api.openai.com/v1/realtime?intent=transcription")!
+
+    // Provider-based transcription
+    private var transcriptionProvider: TranscriptionProvider?
+    private var cancellables = Set<AnyCancellable>()
 
     // Unique identifier for the current recording session
     private var sessionID = UUID()
-    
+
     // ProcessTap properties
     private var processTap: ProcessTap?
     private let audioProcessController = AudioProcessController()
@@ -33,20 +34,10 @@ class AudioManager: NSObject, ObservableObject {
     private let tapQueue = DispatchQueue(label: "io.meetingnotes.audiotap", qos: .userInitiated)
     private var isTapActive = false
     private var isRestartingSystemTap = false
-    
+
     // Add properties near the top, after existing private vars
     private var micRetryCount = 0
     private let maxMicRetries = 3
-    
-    // Add current interim transcripts per source
-    private var currentInterim: [AudioSource: String] = [.mic: "", .system: ""]
-    
-    // Add ping timers to keep WebSocket connections alive
-    private var pingTimers: [AudioSource: Timer] = [:]
-    private var cancellables = Set<AnyCancellable>()
-    
-    // Session refresh timers to prevent 30-minute expiry
-    private var sessionRefreshTimers: [AudioSource: Timer] = [:]
 
     private override init() {
         super.init()
@@ -79,7 +70,7 @@ class AudioManager: NSObject, ObservableObject {
 
     func startRecording() {
         print("Starting recording...")
-        
+
         // Bump session ID so any old async callbacks can be ignored
         sessionID = UUID()
 
@@ -91,9 +82,38 @@ class AudioManager: NSObject, ObservableObject {
         // Stop any in-progress recording
         stopRecordingInternal()
 
-        // Validate API key and account status before connecting
+        // Get selected provider and create transcription provider
+        let providerType = UserDefaultsManager.shared.selectedProvider
+        let provider = AIProviderFactory.createTranscriptionProvider(for: providerType)
+        transcriptionProvider = provider
+
+        // Subscribe to provider's transcript chunks and errors
+        provider.transcriptChunksPublisher
+            .receive(on: DispatchQueue.main)
+            .assign(to: \.transcriptChunks, on: self)
+            .store(in: &cancellables)
+
+        provider.errorPublisher
+            .receive(on: DispatchQueue.main)
+            .assign(to: \.errorMessage, on: self)
+            .store(in: &cancellables)
+
+        // Validate API key and connect provider
         Task {
-            let validationResult = await APIKeyValidator.shared.validateCurrentAPIKey()
+            // Get appropriate API key for the provider
+            let apiKey = getAPIKey(for: providerType)
+
+            guard !apiKey.isEmpty else {
+                DispatchQueue.main.async {
+                    self.errorMessage = ErrorMessage.noAPIKey
+                }
+                return
+            }
+
+            // Validate API key for the selected provider
+            // For Claude, we validate against OpenAI since it uses OpenAI for transcription
+            let validationProvider = providerType == .claude ? AIProviderType.openai : providerType
+            let validationResult = await APIKeyValidator.shared.validateAPIKey(apiKey, for: validationProvider)
             switch validationResult {
             case .failure(let error):
                 let errorMsg = error.localizedDescription
@@ -102,22 +122,41 @@ class AudioManager: NSObject, ObservableObject {
                     self.errorMessage = errorMsg
                 }
             case .success:
-                // Proceed with taps after cleanup
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    // Start microphone capture
-                    self.startMicrophoneTap()
-                    // Start system audio capture asynchronously
-                    Task {
-                        await self.startSystemAudioTap()
+                // Connect transcription provider
+                do {
+                    try await provider.connect(apiKey: apiKey)
+
+                    // Proceed with audio capture after connection
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        // Start microphone capture
+                        self.startMicrophoneTap()
+                        // Start system audio capture asynchronously
+                        Task {
+                            await self.startSystemAudioTap()
+                        }
+                    }
+                } catch {
+                    print("❌ Provider connection failed: \(error)")
+                    DispatchQueue.main.async {
+                        self.errorMessage = "Failed to connect to transcription service: \(error.localizedDescription)"
                     }
                 }
             }
         }
     }
+
+    /// Gets the appropriate API key for the selected provider
+    private func getAPIKey(for provider: AIProviderType) -> String {
+        // Claude uses OpenAI for transcription (hybrid approach)
+        if provider == .claude {
+            return KeychainHelper.shared.getAPIKey(for: .openai) ?? ""
+        }
+        return KeychainHelper.shared.getAPIKey(for: provider) ?? ""
+    }
     
     private func stopRecordingInternal() {
         print("Internal cleanup...")
-        
+
         // Stop system audio capture
         if isTapActive {
             self.processTap?.invalidate()
@@ -125,27 +164,20 @@ class AudioManager: NSObject, ObservableObject {
             isTapActive = false
             print("System audio tap invalidated")
         }
-        
+
         // Stop microphone capture
         cleanupAudioEngine()
-        
-        // Close WebSocket
-        micSocketTask?.cancel(with: .normalClosure, reason: nil)
-        micSocketTask = nil
-        systemSocketTask?.cancel(with: .normalClosure, reason: nil)
-        systemSocketTask = nil
-        
-        // Invalidate ping timers
-        pingTimers.values.forEach { $0.invalidate() }
-        pingTimers.removeAll()
-        
-        // Invalidate session refresh timers
-        sessionRefreshTimers.values.forEach { $0.invalidate() }
-        sessionRefreshTimers.removeAll()
-        
+
+        // Disconnect transcription provider
+        transcriptionProvider?.disconnect()
+        transcriptionProvider = nil
+
+        // Clear Combine subscriptions
+        cancellables.removeAll()
+
         // Reset state
         // (isRecording already cleared in stopRecording)
-        
+
         print("Internal cleanup completed")
     }
     
@@ -213,7 +245,7 @@ class AudioManager: NSObject, ObservableObject {
 
             audioEngine.prepare()
             try audioEngine.start()
-            connectToOpenAIRealtime(source: .mic)
+            // Provider connection is handled in startRecording()
             print("✅ Microphone tap started successfully")
             micRetryCount = 0  // Reset on success
             
@@ -284,9 +316,9 @@ class AudioManager: NSObject, ObservableObject {
         // Start receiving audio data from the tap
         do {
             try startTapIO(newTap)
-            
+
             if !isRestart {
-                connectToOpenAIRealtime(source: .system)
+                // Provider connection is handled in startRecording()
                 self.isRecording = true
                 AudioLevelManager.shared.updateRecordingState(true)
             }
@@ -429,13 +461,13 @@ class AudioManager: NSObject, ObservableObject {
         self.isRecording = false
         AudioLevelManager.shared.updateRecordingState(false)
         print("Stopping recording...")
-        
+
         // Reset audio levels
         micAudioLevel = 0.0
         systemAudioLevel = 0.0
         AudioLevelManager.shared.updateMicLevel(0.0)
         AudioLevelManager.shared.updateSystemLevel(0.0)
-        
+
         // Stop system audio capture
         if isTapActive {
             self.processTap?.invalidate()
@@ -443,25 +475,18 @@ class AudioManager: NSObject, ObservableObject {
             isTapActive = false
             print("System audio tap invalidated")
         }
-        
+
         // Stop microphone capture
         cleanupAudioEngine()
         micRetryCount = 0
-        
-        // Close WebSocket
-        micSocketTask?.cancel(with: .normalClosure, reason: nil)
-        micSocketTask = nil
-        systemSocketTask?.cancel(with: .normalClosure, reason: nil)
-        systemSocketTask = nil
-        
-        // Invalidate ping timers
-        pingTimers.values.forEach { $0.invalidate() }
-        pingTimers.removeAll()
-        
-        // Invalidate session refresh timers
-        sessionRefreshTimers.values.forEach { $0.invalidate() }
-        sessionRefreshTimers.removeAll()
-        
+
+        // Disconnect transcription provider
+        transcriptionProvider?.disconnect()
+        transcriptionProvider = nil
+
+        // Clear Combine subscriptions
+        cancellables.removeAll()
+
         print("Recording stopped")
     }
     
@@ -494,7 +519,12 @@ class AudioManager: NSObject, ObservableObject {
         
         sendAudioData(data, source: source)
     }
-    
+
+    // MARK: - Deprecated WebSocket Methods (Moved to OpenAITranscriptionProvider)
+    // The following methods are no longer used and have been moved to the provider layer.
+    // They are kept here temporarily for reference during the transition period.
+
+    /*
     private func connectToOpenAIRealtime(source: AudioSource) {
         guard let key = KeychainHelper.shared.getAPIKey(), !key.isEmpty else {
             let errorMsg = ErrorMessage.noAPIKey
@@ -888,36 +918,14 @@ class AudioManager: NSObject, ObservableObject {
             break
         }
     }
+    */
+    // End of deprecated WebSocket methods
 
     private func sendAudioData(_ data: Data, source: AudioSource) {
-        let task: URLSessionWebSocketTask? = (source == .mic) ? micSocketTask : systemSocketTask
-
-        guard let socket = task, socket.state == .running else { return }
-
-        let base64 = data.base64EncodedString()
-        let message: [String: Any] = ["type": "input_audio_buffer.append", "audio": base64]
-        
-        let thisSession = self.sessionID
-        do {
-            let jsonData = try JSONSerialization.data(withJSONObject: message)
-            if let jsonStr = String(data: jsonData, encoding: .utf8) {
-                socket.send(.string(jsonStr)) { [weak self] error in
-                    if let error = error {
-                        guard let self = self, self.sessionID == thisSession else { return }
-
-                        // Ignore cancellation errors, which are expected when stopping recording.
-                        if (error as? URLError)?.code == .cancelled {
-                            return
-                        }
-                        print("❌ Send error (\(source)): \(error)")
-                    }
-                }
-            }
-        } catch {
-            print("❌ JSON send error")
-        }
+        // Delegate to transcription provider
+        transcriptionProvider?.sendAudioData(data, source: source)
     }
-    
+
     private func handleAudioEngineConfigurationChange() {
         print("🔔 Audio engine configuration changed - restarting mic")
         restartMicrophone()

@@ -7,8 +7,47 @@ import Foundation
 class DataMigrationManager {
     static let shared = DataMigrationManager()
     
+    private let userDefaults = UserDefaults.standard
+    private let migrationKey = "hasPerformedProviderMigration"
+
     private init() {}
-    
+
+    /// Performs all necessary migrations on app launch
+    func performMigrations() {
+        migrateToMultiProvider()
+    }
+
+    /// Migrates from single OpenAI key to multi-provider key storage
+    func migrateToMultiProvider() {
+        // Check if migration has already been performed
+        guard !userDefaults.bool(forKey: migrationKey) else {
+            return
+        }
+
+        print("🔄 Starting multi-provider migration...")
+
+        // Check if legacy key exists
+        if let legacyKey = KeychainHelper.shared.get(forKey: "openAIKey"), !legacyKey.isEmpty {
+            print("📝 Found legacy OpenAI key, migrating to new format...")
+
+            // Save to new format
+            let success = KeychainHelper.shared.saveAPIKey(legacyKey, for: .openai)
+
+            if success {
+                print("✅ Successfully migrated OpenAI key to new format")
+                // Keep legacy key for backward compatibility (will remove in future version)
+            } else {
+                print("❌ Failed to migrate OpenAI key")
+            }
+        } else {
+            print("ℹ️ No legacy OpenAI key found, skipping migration")
+        }
+
+        // Mark migration as complete
+        userDefaults.set(true, forKey: migrationKey)
+        print("✅ Multi-provider migration complete")
+    }
+
     /// Migrates a meeting from an older version to the current version
     /// - Parameter meeting: The meeting to migrate
     /// - Returns: The migrated meeting, or nil if migration failed

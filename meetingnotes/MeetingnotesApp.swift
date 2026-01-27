@@ -15,6 +15,10 @@ struct MeetingnotesApp: App {
 
     init() {
         updaterController = SPUStandardUpdaterController(updaterDelegate: nil, userDriverDelegate: nil)
+
+        // Perform data migrations
+        DataMigrationManager.shared.performMigrations()
+
         // Setup PostHog analytics for anonymous tracking
         let posthogAPIKey = "phc_Wt8sWUzUF7YPF50aQ0B1qbfA5SJWWR341zmXCaIaIRJ"
         let posthogHost = "https://us.i.posthog.com"
