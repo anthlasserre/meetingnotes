@@ -1,5 +1,5 @@
 // NotesGenerator.swift
-// Handles AI-powered note generation using OpenAI
+// Handles AI-powered note generation using provider pattern
 
 import Foundation
 import OpenAI
@@ -10,12 +10,12 @@ enum GenerationResult {
     case error(String)
 }
 
-/// Generates meeting notes using OpenAI API
+/// Generates meeting notes using AI providers
 class NotesGenerator {
     static let shared = NotesGenerator()
-    
+
     private init() {}
-    
+
     /// Generates meeting notes from meeting data using template-based system prompt with streaming
     /// - Parameters:
     ///   - meeting: The meeting object containing all necessary data
@@ -27,98 +27,34 @@ class NotesGenerator {
                             userBlurb: String,
                             systemPrompt: String,
                             templateId: UUID? = nil) -> AsyncStream<GenerationResult> {
-        
-        return AsyncStream<GenerationResult>(GenerationResult.self) { continuation in
-            Task {
-                do {
-                    guard let apiKey = KeychainHelper.shared.getAPIKey(), !apiKey.isEmpty else {
-                        continuation.yield(.error(ErrorMessage.noAPIKey))
-                        continuation.finish()
-                        return
-                    }
-                    
-                    // Validate API key before proceeding
-                    let validationResult = await APIKeyValidator.shared.validateAPIKey(apiKey)
-                    switch validationResult {
-                    case .failure(let error):
-                        continuation.yield(.error(error.localizedDescription))
-                        continuation.finish()
-                        return
-                    case .success():
-                        break
-                    }
-                    
-                    let openAI = OpenAI(apiToken: apiKey)
-                    
-                    // Create date formatter for meeting date
-                    let dateFormatter = DateFormatter()
-                    dateFormatter.dateStyle = .full
-                    dateFormatter.timeStyle = .short
-                    
-                    // Load template content
-                    var templateContent = ""
-                    if let templateId = templateId {
-                        let templates = LocalStorageManager.shared.loadTemplates()
-                        if let template = templates.first(where: { $0.id == templateId }) {
-                            templateContent = template.formattedContent
-                        }
-                    }
-                    
-                    // If no template content, use default
-                    if templateContent.isEmpty {
-                        continuation.yield(.error(ErrorMessage.noTemplate))
-                        continuation.finish()
-                        return
-                    }
-                    
-                    // Check if transcript is empty
-                    if meeting.formattedTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        continuation.yield(.error(ErrorMessage.noTranscript))
-                        continuation.finish()
-                        return
-                    }
-                    
-                    // Prepare template variables
-                    let templateVariables: [String: String] = [
-                        "meeting_title": meeting.title.isEmpty ? "Untitled Meeting" : meeting.title,
-                        "meeting_date": dateFormatter.string(from: meeting.date),
-                        "transcript": meeting.formattedTranscript,
-                        "user_blurb": userBlurb,
-                        "user_notes": meeting.userNotes,
-                        "template_content": templateContent
-                    ]
-                    
-                    // Process the system prompt template
-                    let systemContent = Settings.processTemplate(systemPrompt, with: templateVariables)
-                    let systemMessage = ChatQuery.ChatCompletionMessageParam(role: .system, content: systemContent)!
 
-                    print(systemContent)
-                
-                    let query = ChatQuery(messages: [systemMessage], model: .gpt4_1)
-                    
-                    let stream: AsyncThrowingStream<ChatStreamResult, Error> = openAI.chatsStream(query: query)
-                    
-                    for try await result in stream {
-                        if let content = result.choices.first?.delta.content {
-                            continuation.yield(.content(content))
-                        }
-                    }
-                    
-                    continuation.finish()
-                } catch {
-                    let errorMessage = ErrorHandler.shared.handleError(error)
-                    print("Error in streaming generation: \(error)")
-                    continuation.yield(.error(errorMessage))
-                    continuation.finish()
-                }
-            }
-        }
+        // Get selected provider and create notes generation provider
+        let providerType = UserDefaultsManager.shared.selectedProvider
+        let provider = AIProviderFactory.createNotesGenerationProvider(for: providerType)
+
+        // Delegate to provider
+        return provider.generateNotesStream(
+            meeting: meeting,
+            userBlurb: userBlurb,
+            systemPrompt: systemPrompt,
+            templateId: templateId
+        )
     }
-    
-    /// Validates if OpenAI API key is configured
+
+    /// Validates if API key is configured for the selected provider
     /// - Returns: True if API key exists, false otherwise
     func isConfigured() -> Bool {
-        guard let key = KeychainHelper.shared.getAPIKey(),
+        let providerType = UserDefaultsManager.shared.selectedProvider
+
+        // For Claude, check both OpenAI (for transcription) and Claude keys
+        if providerType == .claude {
+            let openAIKey = KeychainHelper.shared.getAPIKey(for: .openai)
+            let claudeKey = KeychainHelper.shared.getAPIKey(for: .claude)
+            return !(openAIKey?.isEmpty ?? true) && !(claudeKey?.isEmpty ?? true)
+        }
+
+        // For other providers, check their specific key
+        guard let key = KeychainHelper.shared.getAPIKey(for: providerType),
               !key.isEmpty else {
             return false
         }

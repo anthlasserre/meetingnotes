@@ -3,7 +3,48 @@ import Foundation
 struct Settings: Codable {
     // Only store API key in memory - will be loaded from keychain when needed
     var openAIKey: String = ""
-    
+
+    // MARK: - AI Provider Selection
+
+    var selectedProvider: AIProviderType {
+        get { UserDefaultsManager.shared.selectedProvider }
+        set { UserDefaultsManager.shared.selectedProvider = newValue }
+    }
+
+    // MARK: - Multi-Provider API Keys (loaded from Keychain)
+
+    var geminiKey: String {
+        get { KeychainHelper.shared.getAPIKey(for: .gemini) ?? "" }
+        set {
+            if newValue.isEmpty {
+                _ = KeychainHelper.shared.deleteAPIKey(for: .gemini)
+            } else {
+                _ = KeychainHelper.shared.saveAPIKey(newValue, for: .gemini)
+            }
+        }
+    }
+
+    var claudeKey: String {
+        get { KeychainHelper.shared.getAPIKey(for: .claude) ?? "" }
+        set {
+            if newValue.isEmpty {
+                _ = KeychainHelper.shared.deleteAPIKey(for: .claude)
+            } else {
+                _ = KeychainHelper.shared.saveAPIKey(newValue, for: .claude)
+            }
+        }
+    }
+
+    // Legacy OpenAI key - update to use new multi-provider format
+    mutating func updateOpenAIKey(_ key: String) {
+        openAIKey = key
+        if key.isEmpty {
+            _ = KeychainHelper.shared.deleteAPIKey(for: .openai)
+        } else {
+            _ = KeychainHelper.shared.saveAPIKey(key, for: .openai)
+        }
+    }
+
     // Computed properties that access UserDefaults
     var userBlurb: String {
         get { UserDefaultsManager.shared.userBlurb }

@@ -13,21 +13,80 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                // AI Provider Selection Section
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("AI Provider")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+
+                    Text("Select which AI service to use for transcription and note generation")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Picker("Provider", selection: $viewModel.settings.selectedProvider) {
+                        ForEach(AIProviderType.allCases) { provider in
+                            Text(provider.displayName).tag(provider)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    // Show warning for Claude about requiring OpenAI for transcription
+                    if viewModel.settings.selectedProvider == .claude {
+                        HStack(spacing: 8) {
+                            Image(systemName: "info.circle")
+                                .foregroundColor(.blue)
+                            Text("Claude doesn't support audio transcription. OpenAI will be used for transcription, and Claude for note generation.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(8)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                }
+
                 // API Configuration Section
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("OpenAI API Key")
+                    Text("API Keys")
                         .font(.headline)
                         .foregroundColor(.primary)
 
                     Text("Stored locally and encrypted in Keychain.")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    
-                    SecureField("OpenAI API Key", text: $viewModel.settings.openAIKey)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: .infinity)
+
+                    // Show relevant API key fields based on selected provider
+                    if viewModel.settings.selectedProvider == .openai || viewModel.settings.selectedProvider == .claude {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("OpenAI API Key")
+                                .font(.subheadline)
+                            SecureField("sk-...", text: $viewModel.settings.openAIKey)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+
+                    if viewModel.settings.selectedProvider == .gemini {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Gemini API Key")
+                                .font(.subheadline)
+                            SecureField("API Key", text: $viewModel.settings.geminiKey)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+
+                    if viewModel.settings.selectedProvider == .claude {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Claude API Key")
+                                .font(.subheadline)
+                            SecureField("sk-ant-...", text: $viewModel.settings.claudeKey)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
                 }
-                
+
                 // Note Templates Section: only the Manage Templates button
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Note Templates")

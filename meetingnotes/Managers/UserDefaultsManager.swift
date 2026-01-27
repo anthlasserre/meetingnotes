@@ -18,6 +18,7 @@ class UserDefaultsManager {
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
         static let hasAcceptedTerms = "hasAcceptedTerms"
         static let selectedTemplateId = "selectedTemplateId"
+        static let selectedProvider = "selectedProvider"
     }
     
     // MARK: - User Blurb
@@ -49,16 +50,30 @@ class UserDefaultsManager {
     
     // MARK: - Selected Template ID
     var selectedTemplateId: UUID? {
-        get { 
+        get {
             guard let uuidString = userDefaults.string(forKey: Keys.selectedTemplateId) else { return nil }
             return UUID(uuidString: uuidString)
         }
-        set { 
+        set {
             if let uuid = newValue {
                 userDefaults.set(uuid.uuidString, forKey: Keys.selectedTemplateId)
             } else {
                 userDefaults.removeObject(forKey: Keys.selectedTemplateId)
             }
+        }
+    }
+
+    // MARK: - Selected AI Provider
+    var selectedProvider: AIProviderType {
+        get {
+            guard let rawValue = userDefaults.string(forKey: Keys.selectedProvider),
+                  let provider = AIProviderType(rawValue: rawValue) else {
+                return .openai // Default to OpenAI
+            }
+            return provider
+        }
+        set {
+            userDefaults.set(newValue.rawValue, forKey: Keys.selectedProvider)
         }
     }
 }

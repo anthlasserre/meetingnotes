@@ -58,27 +58,31 @@ class ErrorHandler {
     }
     
     /// Handles HTTP status codes
-    /// - Parameter statusCode: HTTP status code
-    /// - Parameter message: Optional error message
+    /// - Parameters:
+    ///   - statusCode: HTTP status code
+    ///   - message: Optional error message
+    ///   - provider: Optional AI provider type for provider-specific error messages
     /// - Returns: User-friendly error message
-    func handleHTTPStatusCode(_ statusCode: Int, message: String? = nil) -> String {
+    func handleHTTPStatusCode(_ statusCode: Int, message: String? = nil, provider: AIProviderType? = nil) -> String {
+        let providerName = provider?.displayName ?? "API"
+        
         switch statusCode {
         case 200...299:
             return ErrorMessage.success
         case 400:
             return ErrorMessage.badRequest
         case 401:
-            return ErrorMessage.invalidAPIKey
+            return ErrorMessage.invalidAPIKey(for: provider)
         case 402:
-            return ErrorMessage.insufficientFunds
+            return ErrorMessage.insufficientFunds(for: provider)
         case 403:
             return ErrorMessage.accessForbidden
         case 404:
             return ErrorMessage.apiEndpointNotFound
         case 429:
-            return ErrorMessage.rateLimited
+            return ErrorMessage.rateLimited(for: provider)
         case 500...599:
-            return ErrorMessage.apiServerError
+            return ErrorMessage.apiServerError(for: provider)
         default:
             return "HTTP error \(statusCode): \(message ?? "Unknown error")"
         }
@@ -125,9 +129,9 @@ class ErrorHandler {
         case .timedOut:
             return "Request timed out. Please try again."
         case .cannotFindHost:
-            return "Cannot reach OpenAI servers. Please check your internet connection."
+            return "Cannot reach API servers. Please check your internet connection."
         case .cannotConnectToHost:
-            return "Cannot connect to OpenAI servers. Please check your internet connection."
+            return "Cannot connect to API servers. Please check your internet connection."
         case .networkConnectionLost:
             return "Network connection lost. Please try again."
         case .httpTooManyRedirects:
@@ -177,10 +181,10 @@ struct HTTPError: Error {
 
 /// Common error messages
 enum ErrorMessage {
-    static let noAPIKey = "OpenAI API key not found. Please configure your API key in Settings."
+    static let noAPIKey = "API key not found. Please configure your API key in Settings."
     static let noTemplate = "No template content found. Please select a valid template."
     static let noTranscript = "No transcript available. Please record some audio first."
-    static let connectionTimeout = "Failed to connect to OpenAI transcription service. Please check your internet connection and API key."
+    static let connectionTimeout = "Failed to connect to transcription service. Please check your internet connection and API key."
     static let configurationFailed = "Failed to configure transcription session."
     static let invalidURL = "Invalid API URL configuration."
     static let noModelsAvailable = "No models available with your API key. Please check your account status."
@@ -188,15 +192,59 @@ enum ErrorMessage {
     // Centralized messages used across handlers
     static let success = "Success"
     static let badRequest = "Bad request. Please check your input."
-    static let invalidAPIKey = "Invalid OpenAI API key. Please check your API key in Settings."
-    static let insufficientFunds = "Insufficient funds in your OpenAI account. Please add credits to your account."
+    
+    /// Returns provider-specific invalid API key message
+    static func invalidAPIKey(for provider: AIProviderType?) -> String {
+        if let provider = provider {
+            return "Invalid \(provider.displayName) API key. Please check your API key in Settings."
+        }
+        return "Invalid API key. Please check your API key in Settings."
+    }
+    
+    /// Returns provider-specific insufficient funds message
+    static func insufficientFunds(for provider: AIProviderType?) -> String {
+        if let provider = provider {
+            return "Insufficient funds in your \(provider.displayName) account. Please add credits to your account."
+        }
+        return "Insufficient funds in your account. Please add credits to your account."
+    }
+    
     static let accessForbidden = "Access forbidden. Please check your API key permissions."
     static let apiEndpointNotFound = "API endpoint not found. Please update the app."
-    static let rateLimited = "OpenAI API rate limit exceeded. Please try again later."
-    static let apiServerError = "OpenAI server error. Please try again later."
+    
+    /// Returns provider-specific rate limit message
+    static func rateLimited(for provider: AIProviderType?) -> String {
+        if let provider = provider {
+            return "\(provider.displayName) API rate limit exceeded. Please try again later."
+        }
+        return "API rate limit exceeded. Please try again later."
+    }
+    
+    /// Returns provider-specific server error message
+    static func apiServerError(for provider: AIProviderType?) -> String {
+        if let provider = provider {
+            return "\(provider.displayName) server error. Please try again later."
+        }
+        return "API server error. Please try again later."
+    }
+    
     static let requestTimeout = "Request timeout. Please try again."
     static let requestTooLarge = "Request too large. Please try again."
     static let unsupportedData = "Unsupported data format. Please update the app."
     static let connectionLost = "Connection lost. Please try again."
     static let sessionExpired = "Session expired and has been automatically renewed. Transcription will continue."
+    
+    // Legacy static properties for backward compatibility
+    static var invalidAPIKey: String {
+        return invalidAPIKey(for: nil)
+    }
+    static var insufficientFunds: String {
+        return insufficientFunds(for: nil)
+    }
+    static var rateLimited: String {
+        return rateLimited(for: nil)
+    }
+    static var apiServerError: String {
+        return apiServerError(for: nil)
+    }
 }
