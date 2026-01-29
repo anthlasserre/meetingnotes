@@ -25,7 +25,10 @@ class GeminiTranscriptionProvider: TranscriptionProvider {
     private var pingTimers: [AudioSource: Timer] = [:]
     private var apiKey: String = ""
     private var isSetupComplete: [AudioSource: Bool] = [.mic: false, .system: false]
-    
+    private lazy var webSocketSession: URLSession = URLSession(configuration: .default)
+    private var transcriptionBuffer: [AudioSource: String] = [.mic: "", .system: ""]
+    private var flushTimers: [AudioSource: Timer] = [:]
+
     // Audio resampling from 24kHz (from AudioManager) to 16kHz (Gemini requirement)
     private var micResampler: AVAudioConverter?
     private var systemResampler: AVAudioConverter?
@@ -58,6 +61,13 @@ class GeminiTranscriptionProvider: TranscriptionProvider {
         systemSocketTask?.cancel(with: .goingAway, reason: nil)
         micSocketTask = nil
         systemSocketTask = nil
+
+        // Flush any remaining transcription before disconnecting
+        flushTranscriptionBuffer(for: .mic)
+        flushTranscriptionBuffer(for: .system)
+        flushTimers.values.forEach { $0.invalidate() }
+        flushTimers.removeAll()
+        transcriptionBuffer = [.mic: "", .system: ""]
 
         // Clear interim state
         currentInterim = [.mic: "", .system: ""]
@@ -258,11 +268,9 @@ class GeminiTranscriptionProvider: TranscriptionProvider {
         let safeURL = url.absoluteString.replacingOccurrences(of: apiKey, with: "***")
         print("🔗 Connecting to Gemini Live API for \(source): \(safeURL)")
 
-        let session = URLSession(configuration: .default)
         var request = URLRequest(url: url)
-        // Add timeout to detect connection issues faster
         request.timeoutInterval = 30.0
-        let task = session.webSocketTask(with: request)
+        let task = webSocketSession.webSocketTask(with: request)
         
         // Store task immediately so it's available for other operations
         switch source {
@@ -337,9 +345,9 @@ class GeminiTranscriptionProvider: TranscriptionProvider {
         // Based on documentation, the setup should be simpler
         let setup: [String: Any] = [
             "setup": [
-                "model": "models/gemini-2.0-flash-exp",
+                "model": "models/gemini-2.5-flash-native-audio-preview-12-2025",
                 "generationConfig": [
-                    "responseModalities": ["TEXT"]
+                    "responseModalities": ["AUDIO"]
                 ],
                 "inputAudioTranscription": [:]  // Empty dict enables transcription with defaults
             ]
@@ -526,38 +534,36 @@ class GeminiTranscriptionProvider: TranscriptionProvider {
         // Parse serverContent for transcription
         // Gemini Live API returns transcription in serverContent.inputTranscription
         if let serverContent = json["serverContent"] as? [String: Any] {
-            print("🔍 Found serverContent for \(source)")
-            
-            // Check for input transcription (final transcription)
-            if let inputTranscription = serverContent["inputTranscription"] as? [String: Any] {
-                print("🔍 Found inputTranscription for \(source): \(inputTranscription)")
-                
-                if let text = inputTranscription["text"] as? String, !text.isEmpty {
-                    foundTranscription = true
-                    // This is a final transcription
-                    DispatchQueue.main.async {
-                        // Remove any interim chunks for this source
-                        self.transcriptChunks.removeAll { !$0.isFinal && $0.source == source }
-                        
-                        // Append final chunk
-                        let chunk = TranscriptChunk(
-                            timestamp: Date(),
-                            source: source,
-                            text: text,
-                            isFinal: true
-                        )
-                        self.transcriptChunks.append(chunk)
-                        print("✅ Added transcript chunk for \(source), total chunks: \(self.transcriptChunks.count)")
-                        
-                        // Clear interim state
-                        self.currentInterim[source] = ""
-                    }
-                    print("📝 Final transcription (\(source)): \(text)")
-                } else {
-                    print("⚠️ inputTranscription.text is empty or missing")
+            // Accumulate transcription fragments into buffer
+            if let inputTranscription = serverContent["inputTranscription"] as? [String: Any],
+               let text = inputTranscription["text"] as? String, !text.isEmpty {
+                foundTranscription = true
+                transcriptionBuffer[source, default: ""] += text
+                print("📝 Buffered transcription fragment (\(source)): \"\(text)\" → buffer: \"\(transcriptionBuffer[source, default: ""])\"")
+
+                // Update interim display
+                DispatchQueue.main.async {
+                    self.transcriptChunks.removeAll { !$0.isFinal && $0.source == source }
+                    let chunk = TranscriptChunk(
+                        timestamp: Date(),
+                        source: source,
+                        text: self.transcriptionBuffer[source, default: ""],
+                        isFinal: false
+                    )
+                    self.transcriptChunks.append(chunk)
                 }
-            } else {
-                print("⚠️ No inputTranscription found in serverContent")
+
+                // Reset debounce timer - flush after 1.5s of silence
+                flushTimers[source]?.invalidate()
+                flushTimers[source] = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { [weak self] _ in
+                    self?.flushTranscriptionBuffer(for: source)
+                }
+            }
+
+            // turnComplete signals end of a speech segment - flush immediately
+            if let turnComplete = serverContent["turnComplete"] as? Bool, turnComplete {
+                print("🔄 Turn complete for \(source)")
+                flushTranscriptionBuffer(for: source)
             }
         }
         
@@ -625,6 +631,33 @@ class GeminiTranscriptionProvider: TranscriptionProvider {
                let jsonString = String(data: jsonData, encoding: .utf8) {
                 print(jsonString)
             }
+        }
+    }
+
+    private func flushTranscriptionBuffer(for source: AudioSource) {
+        flushTimers[source]?.invalidate()
+        flushTimers[source] = nil
+
+        let bufferedText = transcriptionBuffer[source, default: ""]
+        guard !bufferedText.isEmpty else { return }
+
+        print("📝 Flushing transcription buffer (\(source)): \"\(bufferedText)\"")
+        transcriptionBuffer[source] = ""
+
+        DispatchQueue.main.async {
+            // Remove interim chunk for this source
+            self.transcriptChunks.removeAll { !$0.isFinal && $0.source == source }
+
+            // Append as final chunk
+            let chunk = TranscriptChunk(
+                timestamp: Date(),
+                source: source,
+                text: bufferedText,
+                isFinal: true
+            )
+            self.transcriptChunks.append(chunk)
+            self.currentInterim[source] = ""
+            print("✅ Committed transcript chunk for \(source), total: \(self.transcriptChunks.count)")
         }
     }
 
