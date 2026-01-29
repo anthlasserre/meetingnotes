@@ -106,7 +106,7 @@ class GeminiNotesGenerator: NotesGenerationProvider {
     
     private func callGeminiAPIStream(apiKey: String, systemPrompt: String) async throws -> AsyncThrowingStream<String, Error> {
         // Add alt=sse parameter for Server-Sent Events streaming
-        let urlString = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:streamGenerateContent?key=\(apiKey)&alt=sse"
+        let urlString = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key=\(apiKey)&alt=sse"
         guard let url = URL(string: urlString) else {
             throw NSError(domain: "GeminiProvider", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])
         }
