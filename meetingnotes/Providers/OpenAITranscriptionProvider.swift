@@ -24,13 +24,15 @@ class OpenAITranscriptionProvider: TranscriptionProvider {
     private var pingTimers: [AudioSource: Timer] = [:]
     private var sessionRefreshTimers: [AudioSource: Timer] = [:]
     private var apiKey: String = ""
+    private var language: Language = .english
 
     var isConnected: Bool {
         (micSocketTask?.state == .running) || (systemSocketTask?.state == .running)
     }
 
-    func connect(apiKey: String) async throws {
+    func connect(apiKey: String, language: Language) async throws {
         self.apiKey = apiKey
+        self.language = language
         sessionID = UUID()
 
         // Connect both microphone and system audio sources
@@ -135,7 +137,7 @@ class OpenAITranscriptionProvider: TranscriptionProvider {
                 "input_audio_format": "pcm16",
                 "input_audio_transcription": [
                     "model": "gpt-4o-mini-transcribe",
-                    "language": "en"
+                    "language": language.rawValue
                 ],
                 "turn_detection": [
                     "type": "server_vad",

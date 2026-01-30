@@ -24,6 +24,7 @@ class GeminiTranscriptionProvider: TranscriptionProvider {
     private var currentInterim: [AudioSource: String] = [.mic: "", .system: ""]
     private var pingTimers: [AudioSource: Timer] = [:]
     private var apiKey: String = ""
+    private var language: Language = .english
     private var isSetupComplete: [AudioSource: Bool] = [.mic: false, .system: false]
     private lazy var webSocketSession: URLSession = URLSession(configuration: .default)
     private var transcriptionBuffer: [AudioSource: String] = [.mic: "", .system: ""]
@@ -39,10 +40,11 @@ class GeminiTranscriptionProvider: TranscriptionProvider {
         (micSocketTask?.state == .running) || (systemSocketTask?.state == .running)
     }
 
-    func connect(apiKey: String) async throws {
+    func connect(apiKey: String, language: Language) async throws {
         self.apiKey = apiKey
+        self.language = language
         sessionID = UUID()
-        
+
         // Setup audio resamplers for 24kHz -> 16kHz conversion
         setupResamplers()
 
@@ -349,7 +351,9 @@ class GeminiTranscriptionProvider: TranscriptionProvider {
                 "generationConfig": [
                     "responseModalities": ["AUDIO"]
                 ],
-                "inputAudioTranscription": [:]  // Empty dict enables transcription with defaults
+                "inputAudioTranscription": [
+                    "language": language.rawValue
+                ]
             ]
         ]
 

@@ -2,6 +2,7 @@ Your job is to generate enhanced meeting notes for the following meeting:
 
 Title: {{meeting_title}}
 Date & Time: {{meeting_date}}
+Language: {{language}}
 
 Here are important instructions:
 

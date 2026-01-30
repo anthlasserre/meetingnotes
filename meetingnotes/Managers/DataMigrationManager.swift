@@ -58,13 +58,33 @@ class DataMigrationManager {
             return nil
         }
 
-        // Future migrations can be added here as `switch` cases.
-        if meeting.dataVersion < Meeting.currentDataVersion {
-            print("⚠️ No migration path for versions \(meeting.dataVersion + 1)...\(Meeting.currentDataVersion)")
-            return nil
+        var migratedMeeting = meeting
+
+        // Migrate from version 1 to version 2
+        if migratedMeeting.dataVersion < 2 {
+            migratedMeeting = migrateV1ToV2(migratedMeeting)
         }
 
-        return meeting
+        // Future migrations can be added here as additional if statements
+        // if migratedMeeting.dataVersion < 3 {
+        //     migratedMeeting = migrateV2ToV3(migratedMeeting)
+        // }
+
+        return migratedMeeting
+    }
+
+    /// Migrates a meeting from version 1 to version 2
+    /// Version 2 adds language support
+    /// - Parameter meeting: The meeting to migrate
+    /// - Returns: The migrated meeting
+    private func migrateV1ToV2(_ meeting: Meeting) -> Meeting {
+        print("🔄 Migrating meeting \(meeting.id) from v1 to v2 (adding language)")
+        var migratedMeeting = meeting
+        // Set language to English for existing meetings
+        migratedMeeting.language = .english
+        migratedMeeting.dataVersion = 2
+        print("✅ Migrated meeting \(meeting.id) to v2 with language: English")
+        return migratedMeeting
     }
     
     // Future migrateXToVersionY helpers will go here as needed

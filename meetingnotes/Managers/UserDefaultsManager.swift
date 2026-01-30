@@ -19,6 +19,7 @@ class UserDefaultsManager {
         static let hasAcceptedTerms = "hasAcceptedTerms"
         static let selectedTemplateId = "selectedTemplateId"
         static let selectedProvider = "selectedProvider"
+        static let defaultLanguage = "defaultLanguage"
     }
     
     // MARK: - User Blurb
@@ -74,6 +75,20 @@ class UserDefaultsManager {
         }
         set {
             userDefaults.set(newValue.rawValue, forKey: Keys.selectedProvider)
+        }
+    }
+
+    // MARK: - Default Language
+    var defaultLanguage: Language {
+        get {
+            guard let rawValue = userDefaults.string(forKey: Keys.defaultLanguage),
+                  let language = Language(rawValue: rawValue) else {
+                return .english // Default to English
+            }
+            return language
+        }
+        set {
+            userDefaults.set(newValue.rawValue, forKey: Keys.defaultLanguage)
         }
     }
 }

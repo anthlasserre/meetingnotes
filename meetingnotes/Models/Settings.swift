@@ -70,7 +70,12 @@ struct Settings: Codable {
         get { UserDefaultsManager.shared.hasAcceptedTerms }
         set { UserDefaultsManager.shared.hasAcceptedTerms = newValue }
     }
-    
+
+    var defaultLanguage: Language {
+        get { UserDefaultsManager.shared.defaultLanguage }
+        set { UserDefaultsManager.shared.defaultLanguage = newValue }
+    }
+
     // System prompt default loading
     static func defaultSystemPrompt() -> String {
         guard let path = Bundle.main.path(forResource: "DefaultSystemPrompt", ofType: "txt"),

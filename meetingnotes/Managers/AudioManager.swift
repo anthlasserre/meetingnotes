@@ -68,8 +68,8 @@ class AudioManager: NSObject, ObservableObject {
         NotificationCenter.default.removeObserver(self)
     }
 
-    func startRecording() {
-        print("Starting recording...")
+    func startRecording(language: Language) {
+        print("Starting recording with language: \(language.displayName)")
 
         // Bump session ID so any old async callbacks can be ignored
         sessionID = UUID()
@@ -122,9 +122,9 @@ class AudioManager: NSObject, ObservableObject {
                     self.errorMessage = errorMsg
                 }
             case .success:
-                // Connect transcription provider
+                // Connect transcription provider with language
                 do {
-                    try await provider.connect(apiKey: apiKey)
+                    try await provider.connect(apiKey: apiKey, language: language)
 
                     // Proceed with audio capture after connection
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
