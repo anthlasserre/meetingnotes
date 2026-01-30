@@ -45,6 +45,28 @@ struct SettingsView: View {
                     }
                 }
 
+                // Default Language Section
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Default Language")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+
+                    Text("This language will be used for transcription and note generation by default.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Picker("Default Language", selection: $viewModel.settings.defaultLanguage) {
+                        ForEach(Language.allCases) { language in
+                            HStack {
+                                Text(language.flagEmoji)
+                                Text(language.displayName)
+                            }
+                            .tag(language)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+
                 // API Configuration Section
                 VStack(alignment: .leading, spacing: 8) {
                     Text("API Keys")

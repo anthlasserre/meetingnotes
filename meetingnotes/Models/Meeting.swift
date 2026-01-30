@@ -70,11 +70,12 @@ struct Meeting: Codable, Identifiable, Hashable {
     var userNotes: String
     var generatedNotes: String
     var templateId: UUID?  // Add property to track per-meeting template
+    var language: Language?  // Language for transcription and note generation
     // MARK: - Data versioning
     /// Version of this Meeting record on disk. Useful for migration.
     var dataVersion: Int
     /// Current app data version. Increment whenever you make a breaking change to `Meeting` that requires migration.
-    static let currentDataVersion = 1
+    static let currentDataVersion = 2
     
     init(id: UUID = UUID(),
          date: Date = Date(),
@@ -83,6 +84,7 @@ struct Meeting: Codable, Identifiable, Hashable {
          userNotes: String = "",
          generatedNotes: String = "",
          templateId: UUID? = nil,
+         language: Language? = nil,
          dataVersion: Int = Meeting.currentDataVersion) {
         self.id = id
         self.date = date
@@ -91,6 +93,7 @@ struct Meeting: Codable, Identifiable, Hashable {
         self.userNotes = userNotes
         self.generatedNotes = generatedNotes
         self.templateId = templateId
+        self.language = language
         self.dataVersion = dataVersion
     }
     

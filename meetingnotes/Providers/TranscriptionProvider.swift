@@ -11,8 +11,10 @@ import Combine
 /// Protocol that all transcription providers must implement
 protocol TranscriptionProvider: AnyObject {
     /// Connect to the transcription service
-    /// - Parameter apiKey: The API key for authentication
-    func connect(apiKey: String) async throws
+    /// - Parameters:
+    ///   - apiKey: The API key for authentication
+    ///   - language: The language for transcription
+    func connect(apiKey: String, language: Language) async throws
 
     /// Disconnect from the transcription service
     func disconnect()

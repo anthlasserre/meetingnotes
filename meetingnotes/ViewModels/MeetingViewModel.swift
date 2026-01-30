@@ -188,8 +188,10 @@ class MeetingViewModel: ObservableObject {
 
             switch validationResult {
             case .success():
+                // Determine effective language: meeting override or default
+                let effectiveLanguage = meeting.language ?? Settings().defaultLanguage
                 // Key is valid, proceed with recording
-                recordingSessionManager.startRecording(for: meeting.id)
+                recordingSessionManager.startRecording(for: meeting.id, language: effectiveLanguage)
             case .failure(let error):
                 // Show error message
                 errorMessage = error.localizedDescription

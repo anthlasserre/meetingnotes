@@ -67,13 +67,15 @@ class OpenAINotesGenerator: NotesGenerationProvider {
                     }
 
                     // Prepare template variables
+                    let effectiveLanguage = meeting.language ?? Language.english
                     let templateVariables: [String: String] = [
                         "meeting_title": meeting.title.isEmpty ? "Untitled Meeting" : meeting.title,
                         "meeting_date": dateFormatter.string(from: meeting.date),
                         "transcript": meeting.formattedTranscript,
                         "user_blurb": userBlurb,
                         "user_notes": meeting.userNotes,
-                        "template_content": templateContent
+                        "template_content": templateContent,
+                        "language": effectiveLanguage.displayName
                     ]
 
                     // Process the system prompt template

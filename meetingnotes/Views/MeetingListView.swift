@@ -323,7 +323,29 @@ struct MeetingDetailContentView: View {
                         .buttonStyle(.plain)
                         .disabled(viewModel.meeting.transcript.isEmpty || viewModel.isGeneratingNotes || viewModel.isRecording || viewModel.isStartingRecording)
                         .help("Generate enhanced notes using a template")
-                        
+
+                        // Language Picker
+                        Picker("Language", selection: Binding(
+                            get: { viewModel.meeting.language ?? Settings().defaultLanguage },
+                            set: { newLanguage in
+                                viewModel.meeting.language = newLanguage
+                            }
+                        )) {
+                            ForEach(Language.allCases) { language in
+                                HStack {
+                                    Text(language.flagEmoji)
+                                    Text(language.displayName)
+                                }
+                                .tag(language)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 140)
+                        .disabled(viewModel.isRecording || !viewModel.meeting.transcriptChunks.isEmpty)
+                        .help(viewModel.isRecording ? "Cannot change language during recording" :
+                              !viewModel.meeting.transcriptChunks.isEmpty ? "Cannot change language after transcription" :
+                              "Select language for transcription")
+
                         // Recording Button
                         Button(action: {
                             viewModel.toggleRecording()
